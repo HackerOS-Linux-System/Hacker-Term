@@ -1,1 +1,24 @@
+# ~/.hackeros/hacker-term/config.toml
 
+# === Kolory i przezroczystość ===
+background_color = "#1e1e2e"      # Główny kolor tła (ciemny fioletowo-szary)
+background_opacity = 0.85         # Przezroczystość tła (0.0 - 1.0)
+
+text_color = "#cdd6f4"            # Kolor tekstu
+cursor_color = "#f5e0dc"          # Kolor kursora (miękki róż)
+
+header_background_color = "#313244"
+tab_background_color = "#45475a"
+button_background_color = "#6c7086"
+
+# === Czcionka ===
+font_family = "JetBrains Mono"
+font_size = 13
+
+# === Efekty cząsteczkowe (tylko przy pisaniu) ===
+particle_color = "rgba(255, 255, 255, 0.7)"  # Kolor cząsteczek (lekko przezroczyste)
+particle_count = 15                         # Ilość cząsteczek na naciśnięcie klawisza
+particle_life_min = 30                      # Minimalny czas życia cząsteczki
+particle_life_max = 60                      # Maksymalny czas życia
+particle_size_min = 1.5                     # Minimalny rozmiar
+particle_size_max = 4.0                     # Maksymalny rozmiar
