@@ -1,4 +1,3 @@
-// src/terminal.rs
 use gio::Cancellable;
 use glib::{clone::Downgrade, SpawnFlags};
 use gtk::prelude::*;
