@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-gtk = { version = "0.9", package = "gtk4" }
-gio = "0.9"
-glib = "0.10"
-vte = { version = "0.13", package = "vte4" }
-webkitgtk6 = "0.2"
+gtk = { version = "0.10", package = "gtk4" }
+gio = "0.21"
+glib = "0.21"
+vte = { version = "0.9", package = "vte4" }
+webkitgtk6 = { version = "0.5", package = "webkit6" }
 which = "4.4"
