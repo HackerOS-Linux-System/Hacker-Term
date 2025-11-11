@@ -1,6 +1,6 @@
 [package]
 name = "hacker-term"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -10,3 +10,6 @@ glib = "0.21"
 vte = { version = "0.9", package = "vte4" }
 webkitgtk6 = { version = "0.5", package = "webkit6" }
 which = "4.4"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+dirs = "5.0"
