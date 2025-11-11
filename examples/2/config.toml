@@ -1,1 +1,74 @@
+# ~/.hackeros/hacker-term/config.toml
+# Temat: Cyberpunk Matrix – zielony, neonowy, retro-futurystyczny
 
+# === Tło i przezroczystość ===
+background_color = "#0a0a0a"      # Prawie czarny, głęboki
+background_opacity = 0.88         # Lekko przezroczyste, ale stabilne
+
+# === Kolory tekstu i interfejsu ===
+text_color = "#00ff41"            # Klasyczny zielony matrix
+cursor_color = "#39ff14"          # Pulsujący zielony kursor
+
+header_background_color = "#001a00"
+tab_background_color = "#002200"
+button_background_color = "#003300"
+
+# === Czcionka ===
+font_family = "'Fira Code', 'JetBrains Mono', monospace"
+font_size = 14
+
+# === Efekty cząsteczkowe (tylko przy pisaniu) ===
+particle_color = "rgba(0, 255, 65, 0.6)"   # Zielone, lekko przezroczyste
+particle_count = 12                        # Delikatne, ale widoczne
+particle_life_min = 35
+particle_life_max = 65
+particle_size_min = 1.8
+particle_size_max = 4.5
+
+# === Zaawansowane efekty (eksperymentalne) ===
+# Możesz je wyłączyć, ustawiając na false
+enable_cursor_glow = true         # Delikatny blask pod kursorem (CSS)
+enable_tab_pulse = true           # Lekkie pulsowanie aktywnej karty
+enable_background_scanlines = true # Subtelne linie skanowania (CSS)
+
+# === Dodatkowe style CSS (nadpisują domyślne) ===
+# Używane tylko jeśli powyższe opcje są włączone
+extra_css = """
+    /* Zielony blask kursora */
+    vte-terminal {
+        -vte-cursor-foreground-color: #39ff14;
+        -vte-cursor-background-color: #001a00;
+        box-shadow: inset 0 0 8px rgba(57, 255, 20, 0.3);
+    }
+
+    /* Pulsowanie aktywnej karty */
+    notebook tab:checked {
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { background-color: rgba(0, 50, 0, 0.95); }
+        50% { background-color: rgba(0, 80, 0, 0.95); }
+    }
+
+    /* Linie skanowania (subtelne) */
+    overlay::after {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: repeating-linear-gradient(
+            0deg,
+            rgba(0, 255, 65, 0.03),
+            rgba(0, 255, 65, 0.03) 1px,
+            transparent 1px,
+            transparent 2px
+        );
+        pointer-events: none;
+        animation: scan 8s linear infinite;
+    }
+
+    @keyframes scan {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100%); }
+    }
+"""
