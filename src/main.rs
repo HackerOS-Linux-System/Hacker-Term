@@ -7,6 +7,7 @@ use vte::prelude::{TerminalExt, TerminalExtManual};
 use webkitgtk6::{WebContext, WebView};
 use webkitgtk6::prelude::WebViewExt;
 use which::which;
+use gio::Cancellable;
 
 fn main() {
     // Initialize GTK
@@ -37,8 +38,8 @@ fn main() {
     ");
         gtk::style_context_add_provider_for_display(
             &gtk::gdk::Display::default().unwrap(),
-                                                    &provider,
-                                                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
     });
     app.connect_activate(build_ui);
@@ -96,10 +97,10 @@ fn add_tab(notebook: &Notebook) {
         &[&shell],
         &[],
         glib::SpawnFlags::DEFAULT,
-        None::<&(dyn Fn() + 'static)>,
-                         -1,
-                         None,
-                         |_| {},
+        || {},
+        -1,
+        None::<&Cancellable>,
+        |_| {},
     );
     overlay.set_child(Some(&terminal));
     // Create WebView for animations (transparent overlay)
@@ -115,115 +116,108 @@ fn add_tab(notebook: &Notebook) {
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background: transparent;
-}
-canvas {
-display: block;
-position: absolute;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-pointer-events: none; /* Allow clicks to pass through */
-}
-</style>
-</head>
-<body>
-<canvas id="canvas"></canvas>
-<script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-let particles = [];
-let animationFrameId;
-function resizeCanvas() {
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
-class Particle {
-constructor(x, y) {
-this.x = x;
-this.y = y;
-this.size = Math.random() * 5 + 2;
-this.speedX = Math.random() * 4 - 2;
-this.speedY = Math.random() * 4 - 2;
-this.color = `rgba(${Math.random()*255}, ${Math.random()*255}, ${Math.random()*255}, ${Math.random() * 0.5 + 0.5})`;
-this.life = 30 + Math.random() * 20;
-}
-update() {
-this.x += this.speedX;
-this.y += this.speedY;
-this.speedY += 0.1; // Gravity effect
-this.life -= 1;
-if (this.size > 0.2) this.size -= 0.1;
-}
-draw() {
-ctx.fillStyle = this.color;
-ctx.beginPath();
-ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-ctx.fill();
-}
-}
-function animate() {
-ctx.clearRect(0, 0, canvas.width, canvas.height);
-particles = particles.filter(particle => {
-particle.update();
-particle.draw();
-return particle.life > 0;
-});
-animationFrameId = requestAnimationFrame(animate);
-}
-animate();
-// Function to spawn particles (called from Rust on input)
-function spawnParticles(count = 50) {
-const x = Math.random() * canvas.width;
-const y = Math.random() * canvas.height;
-for (let i = 0; i < count; i++) {
-    particles.push(new Particle(x, y));
-}
-}
-</script>
-</body>
-</html>
-"#;
-webview.load_html(html, None);
-// Make webview expand and overlay
-webview.set_hexpand(true);
-webview.set_vexpand(true);
-overlay.add_overlay(&webview);
-// Connect to VTE commit signal to trigger particles on text input
-let webview_clone = webview.clone();
-terminal.connect_commit(move |_, text, _| {
-    if !text.is_empty() {
-        // Trigger JavaScript to spawn particles
-        webview_clone.evaluate_javascript("spawnParticles(50);", None, None, None, |_| {});
+    background: transparent; }
+    canvas { display: block; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; /* Allow clicks to pass through */ }
+    </style>
+    </head>
+    <body>
+    <canvas id="canvas"></canvas>
+    <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+    let animationFrameId;
+    function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
     }
-});
-// Wrap in ScrolledWindow for better handling
-let scrolled = ScrolledWindow::new();
-scrolled.set_child(Some(&overlay));
-scrolled.set_hexpand(true);
-scrolled.set_vexpand(true);
-// Add to notebook with close button
-let tab_box = gtk::Box::new(Orientation::Horizontal, 0);
-let label = Label::new(Some("Terminal"));
-tab_box.append(&label);
-let close_button = Button::builder()
-.icon_name("window-close-symbolic")
-.css_classes(vec!["flat".to_string()])
-.build();
-tab_box.append(&close_button);
-let _ = notebook.append_page(&scrolled, Some(&tab_box));
-let notebook_weak = notebook.downgrade();
-let scrolled_weak = scrolled.downgrade();
-close_button.connect_clicked(move |_| {
-    if let Some(notebook) = notebook_weak.upgrade() {
-        if let Some(scrolled) = scrolled_weak.upgrade() {
-            if let Some(page) = notebook.page_num(&scrolled) {
-                notebook.remove_page(Some(page));
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    class Particle {
+    constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.size = Math.random() * 5 + 2;
+    this.speedX = Math.random() * 4 - 2;
+    this.speedY = Math.random() * 4 - 2;
+    this.color = `rgba(${Math.random()*255}, ${Math.random()*255}, ${Math.random()*255}, ${Math.random() * 0.5 + 0.5})`;
+    this.life = 30 + Math.random() * 20;
+    }
+    update() {
+    this.x += this.speedX;
+    this.y += this.speedY;
+    this.speedY += 0.1; // Gravity effect
+    this.life -= 1;
+    if (this.size > 0.2) this.size -= 0.1;
+    }
+    draw() {
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    }
+    }
+    function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles = particles.filter(particle => {
+    particle.update();
+    particle.draw();
+    return particle.life > 0;
+    });
+    animationFrameId = requestAnimationFrame(animate);
+    }
+    animate();
+    // Function to spawn particles (called from Rust on input)
+    function spawnParticles(count = 50) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    for (let i = 0; i < count; i++) {
+        particles.push(new Particle(x, y));
+    }
+    }
+    </script>
+    </body>
+    </html>
+    "#;
+    webview.load_html(html, None);
+    // Make webview expand and overlay
+    webview.set_hexpand(true);
+    webview.set_vexpand(true);
+    overlay.add_overlay(&webview);
+    webview.set_sensitive(false);
+    webview.set_can_focus(false);
+    // Connect to VTE commit signal to trigger particles on text input
+    let webview_clone = webview.clone();
+    terminal.connect_commit(move |_, text, _| {
+        if !text.is_empty() {
+            // Trigger JavaScript to spawn particles
+            webview_clone.evaluate_javascript("spawnParticles(50);", None, None, None::<&Cancellable>, |_| {});
+        }
+    });
+    // Wrap in ScrolledWindow for better handling
+    let scrolled = ScrolledWindow::new();
+    scrolled.set_child(Some(&overlay));
+    scrolled.set_hexpand(true);
+    scrolled.set_vexpand(true);
+    // Add to notebook with close button
+    let tab_box = gtk::Box::new(Orientation::Horizontal, 0);
+    let label = Label::new(Some("Terminal"));
+    tab_box.append(&label);
+    let close_button = Button::builder()
+    .icon_name("window-close-symbolic")
+    .css_classes(vec!["flat".to_string()])
+    .build();
+    tab_box.append(&close_button);
+    let _ = notebook.append_page(&scrolled, Some(&tab_box));
+    let notebook_weak = notebook.downgrade();
+    let scrolled_weak = scrolled.downgrade();
+    close_button.connect_clicked(move |_| {
+        if let Some(notebook) = notebook_weak.upgrade() {
+            if let Some(scrolled) = scrolled_weak.upgrade() {
+                if let Some(page) = notebook.page_num(&scrolled) {
+                    notebook.remove_page(Some(page));
+                }
             }
         }
-    }
-});
+    });
 }
