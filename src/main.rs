@@ -1,161 +1,264 @@
-use anyhow::{Context, Result};
-use crossterm::{
-    cursor::{Hide, MoveTo, Show},
-    event::{self, Event, KeyCode, KeyEvent},
-    execute,
-    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
-};
-use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize};
-use std::{
-    io::{self, BufRead, BufReader, Write},
-    sync::{
-        mpsc::{channel, Receiver, Sender},
-        Arc, Mutex,
-    },
-    thread::{self, sleep},
-    time::Duration,
-};
-use vte::{Params, Perform, Parser};
+use std::env;
+use std::rc::Rc;
+use std::cell::RefCell;
 
-// Handler for VTE to handle terminal output with "hacker" effects
-struct HackerHandler {
-    tx: Sender<String>,
+use glib::clone;
+use gtk::gdk::RGBA;
+use gtk::gio::ApplicationFlags;
+use gtk::prelude::*;
+use gtk::{Application, ApplicationWindow, Button, CssProvider, HeaderBar, Label, Notebook, Orientation, ScrolledWindow, StyleContext};
+use vte::{PtyFlags, Terminal};
+use webkitgtk6::{WebContext, WebView};
+use which;
+
+fn main() {
+    // Initialize GTK
+    let app = Application::new(Some("com.example.rustterminal"), ApplicationFlags::default());
+
+    app.connect_startup(|_| {
+        // Set dark theme globally
+        let settings = gtk::Settings::default().unwrap();
+        settings.set_property("gtk-application-prefer-dark-theme", &true.to_value()).unwrap();
+        settings.set_property("gtk-theme-name", &"Adwaita".to_value()).unwrap(); // Adwaita has dark variant
+
+        // Load custom CSS for semi-transparent background and styling
+        let provider = CssProvider::new();
+        provider.load_from_data(b"
+            window {
+                background-color: rgba(0, 0, 0, 0.8); /* Semi-transparent dark background */
+            }
+            notebook {
+                background-color: transparent;
+            }
+            scrolledwindow {
+                background-color: transparent;
+            }
+            vte-terminal {
+                background-color: transparent;
+                color: #ffffff;
+                font-family: monospace;
+                font-size: 12pt;
+            }
+        ").unwrap();
+
+        StyleContext::add_provider_for_display(
+            &gtk::gdk::Display::default().unwrap(),
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    });
+
+    app.connect_activate(build_ui);
+
+    app.run();
 }
 
-impl Perform for HackerHandler {
-    fn print(&mut self, c: char) {
-        // Send char to rendering thread with delay for typing effect
-        self.tx.send(c.to_string()).unwrap();
-    }
+fn build_ui(app: &Application) {
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Rust Terminal")
+        .default_width(800)
+        .default_height(600)
+        .build();
 
-    fn execute(&mut self, byte: u8) {
-        match byte {
-            b'\n' => {
-                // Enter effect: flash or something fancy
-                self.tx.send("\n".to_string()).unwrap();
-                // For "flash", we can send a special message, but for simplicity, just newline
+    // Enable RGBA visual for transparency
+    if let Some(screen) = window.screen() {
+        if screen.is_composited() {
+            if let Some(visual) = screen.rgba_visual() {
+                window.set_visual(Some(&visual));
             }
-            b'\r' => self.tx.send("\r".to_string()).unwrap(),
-            b'\t' => self.tx.send("\t".to_string()).unwrap(),
-            b'\x08' => self.tx.send("\x08".to_string()).unwrap(), // Backspace
-            _ => {}
         }
     }
 
-    fn hook(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _c: char) {}
-    fn put(&mut self, _byte: u8) {}
-    fn unhook(&mut self) {}
-    fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
-    fn csi_dispatch(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, c: char) {
-        // Handle some CSI for cursor, etc., but simplified
-        if c == 'J' {
-            self.tx.send("CLEAR".to_string()).unwrap(); // Special for clear screen
-        }
-    }
-    fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {}
+    // Create header bar
+    let header = HeaderBar::new();
+    header.set_show_title_buttons(true);
+    window.set_titlebar(Some(&header));
+
+    // Create notebook for tabs
+    let notebook = Notebook::new();
+    notebook.set_tab_pos(gtk::PositionType::Top);
+    notebook.set_scrollable(true);
+
+    // Add button to header to create new tab
+    let add_button = Button::with_label("+");
+    header.pack_start(&add_button);
+
+    add_button.connect_clicked(clone!(@weak notebook => move |_| {
+        add_tab(&notebook);
+    }));
+
+    // Add initial tab
+    add_tab(&notebook);
+
+    window.set_child(Some(&notebook));
+    window.present();
 }
 
-fn main() -> Result<()> {
-    // Setup crossterm
-    let mut stdout = io::stdout();
-    enable_raw_mode()?;
-    execute!(stdout, EnterAlternateScreen, Hide)?;
+fn add_tab(notebook: &Notebook) {
+    // Create overlay for terminal and webview
+    let overlay = gtk::Overlay::new();
 
-    // Set "hacker" style: green text on black background
-    execute!(
-        stdout,
-        SetForegroundColor(Color::Green),
-        SetBackgroundColor(Color::Black)
-    )?;
+    // Create VTE Terminal
+    let terminal = Terminal::new();
+    terminal.set_hexpand(true);
+    terminal.set_vexpand(true);
+    terminal.set_allow_hyperlink(true);
 
-    // Channels for communication
-    let (tx, rx) = channel::<String>();
+    // Determine shell: prefer zsh if available, fallback to bash
+    let shell = if which::which("zsh").is_ok() {
+        "/bin/zsh".to_string()
+    } else {
+        "/bin/bash".to_string()
+    };
 
-    // Setup PTY with zsh
-    let pty_system = native_pty_system();
-    let pty = pty_system
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .context("Failed to open PTY")?;
+    // Spawn the shell in the terminal
+    terminal.spawn_async(
+        PtyFlags::DEFAULT,
+        None,
+        &[&shell],
+        &[],
+        glib::SpawnFlags::DEFAULT,
+        None,
+        -1,
+        None,
+        |_| {},
+    );
 
-    let mut cmd = CommandBuilder::new("zsh");
-    cmd.cwd(std::env::current_dir()?);
-    let mut child = cmd.spawn(&pty.pty).context("Failed to spawn zsh")?;
+    overlay.add(&terminal);
 
-    let mut reader = BufReader::new(pty.master.try_clone_reader()?);
-    let writer = Arc::new(Mutex::new(pty.master.try_clone_writer()?));
+    // Create WebView for animations (transparent overlay)
+    let context = WebContext::default().unwrap();
+    let webview = WebView::builder().context(&context).build();
+    webview.set_background_color(&RGBA::new(0.0, 0.0, 0.0, 0.0)); // Fully transparent
 
-    // Thread for reading from PTY and parsing with VTE
-    let writer_clone = writer.clone();
-    thread::spawn(move || {
-        let mut parser = Parser::new();
-        let handler = HackerHandler { tx };
-        let mut buf = [0; 1024];
-        loop {
-            let n = reader.read(&mut buf).unwrap_or(0);
-            if n == 0 {
-                break;
+    // Load HTML with canvas and JavaScript for particle animations (simulating Hyperpower)
+    let html = r#"
+    <html>
+    <head>
+        <style>
+            body, html {
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+                background: transparent;
             }
-            for &byte in &buf[0..n] {
-                parser.advance(&mut handler, byte);
+            canvas {
+                display: block;
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none; /* Allow clicks to pass through */
             }
+        </style>
+    </head>
+    <body>
+        <canvas id="canvas"></canvas>
+        <script>
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            let particles = [];
+            let animationFrameId;
+
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            class Particle {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                    this.size = Math.random() * 5 + 2;
+                    this.speedX = Math.random() * 4 - 2;
+                    this.speedY = Math.random() * 4 - 2;
+                    this.color = `rgba(${Math.random()*255}, ${Math.random()*255}, ${Math.random()*255}, ${Math.random() * 0.5 + 0.5})`;
+                    this.life = 30 + Math.random() * 20;
+                }
+
+                update() {
+                    this.x += this.speedX;
+                    this.y += this.speedY;
+                    this.speedY += 0.1; // Gravity effect
+                    this.life -= 1;
+                    if (this.size > 0.2) this.size -= 0.1;
+                }
+
+                draw() {
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                particles = particles.filter(particle => {
+                    particle.update();
+                    particle.draw();
+                    return particle.life > 0;
+                });
+                animationFrameId = requestAnimationFrame(animate);
+            }
+
+            animate();
+
+            // Function to spawn particles (called from Rust on input)
+            function spawnParticles(count = 50) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                for (let i = 0; i < count; i++) {
+                    particles.push(new Particle(x, y));
+                }
+            }
+        </script>
+    </body>
+    </html>
+    "#;
+    webview.load_html(html, None);
+
+    // Make webview expand and overlay
+    webview.set_hexpand(true);
+    webview.set_vexpand(true);
+    overlay.add_overlay(&webview);
+
+    // Connect to VTE commit signal to trigger particles on text input
+    let webview_clone = webview.clone();
+    terminal.connect_commit(move |_, text, _| {
+        if !text.is_empty() {
+            // Trigger JavaScript to spawn particles
+            webview_clone.run_javascript("spawnParticles(50);", None, |_| {});
         }
     });
 
-    // Thread for rendering with effects
-    thread::spawn(move || {
-        let mut stdout = io::stdout();
-        while let Ok(msg) = rx.recv() {
-            if msg == "CLEAR" {
-                execute!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::All)).unwrap();
-                execute!(stdout, MoveTo(0, 0)).unwrap();
-            } else {
-                // Typing effect: print char by char with small delay
-                for c in msg.chars() {
-                    execute!(stdout, Print(c)).unwrap();
-                    stdout.flush().unwrap();
-                    sleep(Duration::from_millis(5)); // Small delay for "hacker typing" effect
-                }
-            }
-        }
-    });
+    // Wrap in ScrolledWindow for better handling
+    let scrolled = ScrolledWindow::new();
+    scrolled.set_child(Some(&overlay));
+    scrolled.set_hexpand(true);
+    scrolled.set_vexpand(true);
 
-    // Input loop
-    loop {
-        if let Ok(Event::Key(KeyEvent { code, .. })) = event::read() {
-            let mut writer = writer.lock().unwrap();
-            match code {
-                KeyCode::Char(c) => {
-                    writer.write_all(c.to_string().as_bytes())?;
-                }
-                KeyCode::Enter => {
-                    writer.write_all(b"\n")?;
-                    // Additional enter effect: maybe a "glitch" but simplified
-                }
-                KeyCode::Backspace => {
-                    writer.write_all(b"\x7f")?; // Delete
-                }
-                KeyCode::Esc => {
-                    break;
-                }
-                _ => {}
-            }
-            writer.flush()?;
-        }
+    // Add to notebook with close button
+    let tab_box = gtk::Box::new(Orientation::Horizontal, 0);
+    let label = Label::new(Some("Terminal"));
+    tab_box.append(&label);
 
-        if child.try_wait()?.is_some() {
-            break;
-        }
-    }
+    let close_button = Button::builder()
+        .icon_name("window-close-symbolic")
+        .css_classes(vec!["flat".to_string()])
+        .build();
+    tab_box.append(&close_button);
 
-    // Cleanup
-    disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen, Show, ResetColor)?;
-    Ok(())
+    let page_num = notebook.append_page(&scrolled, Some(&tab_box));
+
+    close_button.connect_clicked(clone!(@weak notebook => move |_| {
+        if let Some(page) = page_num {
+            notebook.remove_page(Some(page));
+        }
+    }));
 }
