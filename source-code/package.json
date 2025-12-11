@@ -1,1 +1,18 @@
-
+{
+  "name": "Hacker-Term",
+  "version": "1.0.0",
+  "description": "Terminal for HackerOS",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "HackerOS Team",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^25.0.0",
+    "node-pty": "^1.0.0",
+    "xterm": "^5.1.0",
+    "xterm-addon-fit": "^0.7.0",
+    "xterm-addon-web-links": "^0.8.0"
+  }
+}
