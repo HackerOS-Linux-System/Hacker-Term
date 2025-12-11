@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   send: (channel, data) => {
-    const validChannels = ['terminal.keystroke', 'terminal.resize'];
+    const validChannels = ['terminal.keystroke', 'terminal.resize', 'terminal.paste'];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
     }
