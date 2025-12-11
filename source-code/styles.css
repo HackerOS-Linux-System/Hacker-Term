@@ -1,1 +1,68 @@
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #000000;
+  overflow: hidden;
+  font-family: monospace;
+}
 
+#terminal {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+
+/* Add glow to cursor and text for hacker feel */
+.xterm .xterm-cursor {
+  box-shadow: 0 0 10px #00FF00;
+  animation: glow 1s infinite alternate;
+}
+
+.xterm-screen {
+  filter: drop-shadow(0 0 5px rgba(0, 255, 0, 0.5));
+}
+
+/* Typing animation overlay (used in JS) */
+span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-size: 2em;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Smooth transitions for Warp-like feel */
+.xterm-rows {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Glow animation */
+@keyframes glow {
+  from {
+    box-shadow: 0 0 5px #00FF00;
+  }
+  to {
+    box-shadow: 0 0 15px #00FF00;
+  }
+}
+
+/* Overall app styling: Add subtle scan lines for retro hacker look */
+body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 1px,
+    rgba(0, 255, 0, 0.05) 1px,
+    rgba(0, 255, 0, 0.05) 2px
+  );
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.3;
+}
