@@ -1,1 +1,17 @@
+[package]
+name = "Hacker-Term"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gtk = { package = "gtk4", version = "0.10" }
+gdk = { package = "gdk4", version = "0.10" }
+glib = "0.21"
+gio = "0.21"
+pango = "0.21"
+vte = { package = "vte4", version = "0.9" }
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.11"
+gdk-pixbuf = "0.21"
 
