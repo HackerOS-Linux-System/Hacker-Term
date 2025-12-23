@@ -1,4 +1,4 @@
-# ![Hacker Term - Logo.]()
+# ![Hacker Term - Logo.](https://github.com/HackerOS-Linux-System/Hacker-Term/blob/main/source-code/images/logo.png)
 # Hacker Terminal
 
 # Screenshots
