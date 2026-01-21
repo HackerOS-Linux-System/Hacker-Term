@@ -6,6 +6,6 @@
 > cd build-hpm
 > hl compile wrapper.hl
 > cd contents
-> curl -LO https://github.com/HackerOS-Linux-System/Blue-Enviroment/releases/download/v0.2/{Blue-Enviroment,core,decorations,Desktop,launcher,shell,wm} && chmod +x Blue-Enviroment core decorations Desktop launcher shell wm
+> curl -LO https://github.com/HackerOS-Linux-System/Hacker-Term/releases/download/v0.4/Hacker-Term && chmod a+x Hacker-Term
 > cd ..
-> hpm build Blue-Enviroment
+> hpm build Hacker-Term
