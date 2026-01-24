@@ -5,8 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
                                 maximize: () => ipcRenderer.send('window-maximize'),
                                 close: () => ipcRenderer.send('window-close'),
 
-                                // Terminal API - Added 'shell' argument
-                                createTerminal: (id, shell) => ipcRenderer.invoke('terminal-create', id, shell),
+                                // Terminal API - Removed 'shell' argument (enforced in main)
+                                createTerminal: (id) => ipcRenderer.invoke('terminal-create', id),
                                 onTerminalData: (callback) => ipcRenderer.on('terminal-incoming-data', (event, id, data) => callback(id, data)),
                                 writeTerminal: (id, data) => ipcRenderer.send('terminal-write', id, data),
                                 resizeTerminal: (id, cols, rows) => ipcRenderer.send('terminal-resize', id, cols, rows),
