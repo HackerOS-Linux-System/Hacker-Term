@@ -15,7 +15,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.hackerterm.app",
+    "appId": "com.hackeros.hacker-term",
     "productName": "HackerTerm",
     "directories": {
       "output": "dist-electron"
