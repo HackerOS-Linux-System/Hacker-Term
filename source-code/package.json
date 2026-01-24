@@ -1,7 +1,7 @@
 {
-  "name": "hackerterm",
+  "name": "Hacker-Term",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.4.0",
   "description": "A high-fidelity, aesthetic terminal emulator",
   "author": "HackerTerm User",
   "main": "electron/main.js",
