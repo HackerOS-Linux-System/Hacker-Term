@@ -1,7 +1,7 @@
 {
-  "name": "Hacker-Term",
+  "name": "hackerterm",
   "private": true,
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "A high-fidelity, aesthetic terminal emulator",
   "author": "HackerTerm User",
   "main": "electron/main.js",
@@ -15,21 +15,22 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.hackeros.hacker-term",
+    "appId": "com.hackerterm.app",
     "productName": "HackerTerm",
     "directories": {
       "output": "dist-electron"
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "images/**/*"
     ],
     "asarUnpack": [
       "**/node_modules/node-pty"
     ],
     "linux": {
       "target": "AppImage",
-      "icon": "images/logo.svg",
+      "icon": "images/logo.png",
       "category": "Utility"
     }
   },
