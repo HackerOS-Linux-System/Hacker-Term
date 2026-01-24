@@ -28,22 +28,40 @@ export interface TerminalTheme {
     brightWhite: string;
 }
 
+export type CursorStyle = 'block' | 'underline' | 'bar';
+export type FontFamily = '"Fira Code", monospace' | '"JetBrains Mono", monospace' | '"Hack", monospace' | 'monospace';
+
 export interface AppSettings {
     language: 'pl' | 'en';
-    shell: string;
     fontSize: number;
     themeName: string;
+    // New Settings
+    opacity: number;       // 0.0 to 1.0
+    blur: number;          // px
+    padding: number;       // px
+    cursorStyle: CursorStyle;
+    cursorBlink: boolean;
+    fontFamily: FontFamily;
 }
 
 export interface Translations {
     settings: string;
+    appearance: string;
+    terminal: string;
+    about: string;
     language: string;
-    shell: string;
     theme: string;
     fontSize: string;
+    opacity: string;
+    blur: string;
+    padding: string;
+    cursorStyle: string;
+    cursorBlink: string;
+    fontFamily: string;
     close: string;
     newTab: string;
     ready: string;
+    shell: string; // Kept for display purposes
 }
 
 export interface FileSystemNode {
@@ -66,8 +84,7 @@ declare global {
             maximize: () => void;
             close: () => void;
 
-            // Updated to accept custom shell
-            createTerminal: (id: string, shell?: string) => Promise<string>;
+            createTerminal: (id: string) => Promise<string>; // Removed shell arg
             onTerminalData: (callback: (id: string, data: string) => void) => void;
             writeTerminal: (id: string, data: string) => void;
             resizeTerminal: (id: string, cols: number, rows: number) => void;
