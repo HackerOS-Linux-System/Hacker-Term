@@ -24,14 +24,14 @@ const XTermInstance: React.FC<XTermInstanceProps> = ({ isActive, settings, theme
 
         // --- Init XTerm ---
         const term = new Terminal({
-            cursorBlink: true,
-            cursorStyle: 'bar',
+            cursorBlink: settings.cursorBlink,
+            cursorStyle: settings.cursorStyle,
             fontSize: settings.fontSize,
-            fontFamily: '"Fira Code", monospace',
+            fontFamily: settings.fontFamily,
             lineHeight: 1.2,
             allowTransparency: true,
             theme: {
-                background: theme.background,
+                background: theme.background, // Should be transparent
                 foreground: theme.foreground,
                     cursor: theme.cursor,
                     selectionBackground: theme.selection,
@@ -64,12 +64,9 @@ const XTermInstance: React.FC<XTermInstanceProps> = ({ isActive, settings, theme
         xtermRef.current = term;
         fitAddonRef.current = fitAddon;
 
-        // --- Init Electron PTY ---
+        // --- Init Electron PTY (No shell arg passed, handled in main) ---
         if (window.electronAPI) {
-            window.electronAPI.createTerminal(termId, settings.shell).then((shellName) => {
-                // Only show welcome on first load to keep it clean
-                // term.writeln(`\x1b[2mSession started: ${shellName}\x1b[0m`);
-
+            window.electronAPI.createTerminal(termId).then(() => {
                 setTimeout(() => {
                     fitAddon.fit();
                     if(window.electronAPI) {
@@ -116,7 +113,7 @@ const XTermInstance: React.FC<XTermInstanceProps> = ({ isActive, settings, theme
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // 2. React to prop changes (Theme, FontSize) without killing PTY
+    // 2. React to prop changes
     useEffect(() => {
         if (xtermRef.current) {
             // Update Theme
@@ -143,18 +140,21 @@ const XTermInstance: React.FC<XTermInstanceProps> = ({ isActive, settings, theme
                     brightWhite: theme.brightWhite
             };
 
-            // Update Font Size
+            // Update Settings
             xtermRef.current.options.fontSize = settings.fontSize;
+            xtermRef.current.options.fontFamily = settings.fontFamily;
+            xtermRef.current.options.cursorStyle = settings.cursorStyle;
+            xtermRef.current.options.cursorBlink = settings.cursorBlink;
 
-            // Refit after font change
+            // Refit after changes
             fitAddonRef.current?.fit();
             if(window.electronAPI && xtermRef.current) {
                 window.electronAPI.resizeTerminal(idRef.current, xtermRef.current.cols, xtermRef.current.rows);
             }
         }
-    }, [theme, settings.fontSize]);
+    }, [theme, settings]);
 
-    // 3. Handle Visibility
+    // 3. Handle Visibility & Padding
     useEffect(() => {
         if (isActive && fitAddonRef.current && xtermRef.current) {
             requestAnimationFrame(() => {
@@ -165,13 +165,14 @@ const XTermInstance: React.FC<XTermInstanceProps> = ({ isActive, settings, theme
                 }
             });
         }
-    }, [isActive]);
+    }, [isActive, settings.padding]);
 
     return (
         <div
-        className={`absolute inset-0 p-4 ${isActive ? 'z-10' : 'z-0 invisible'}`}
+        className={`absolute inset-0 ${isActive ? 'z-10' : 'z-0 invisible'}`}
         style={{
-            visibility: isActive ? 'visible' : 'hidden'
+            visibility: isActive ? 'visible' : 'hidden',
+            padding: `${settings.padding}px`
         }}
         ref={terminalRef}
         />
