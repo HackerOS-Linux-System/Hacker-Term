@@ -1,20 +1,21 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const pty = require('node-pty');
+const fs = require('fs');
 
 let mainWindow;
 const ptySessions = {};
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1100,
-        height: 750,
+        width: 1200,
+        height: 800,
         minWidth: 600,
         minHeight: 400,
         frame: false,
         transparent: true,
         backgroundColor: '#00000000',
-        icon: path.join(__dirname, '../images/logo.svg'),
+        icon: path.join(__dirname, '../images/logo.png'),
                                    webPreferences: {
                                        nodeIntegration: false,
                                    contextIsolation: true,
@@ -41,30 +42,38 @@ function createWindow() {
     mainWindow.on('closed', () => (mainWindow = null));
 }
 
-// --- PTY Management (Linux Focused) ---
+// --- PTY Management (Strictly ZSH) ---
 
-ipcMain.handle('terminal-create', (event, id, customShell) => {
+ipcMain.handle('terminal-create', (event, id) => {
     try {
-        // 1. Determine Shell
-        let shell = customShell;
+        // FORCE ZSH
+        let shell = '/usr/bin/zsh';
 
-        // Default to bash or zsh if not provided
-        if (!shell || shell.trim() === '') {
-            shell = process.env.SHELL || '/bin/bash';
+        // Fallback if zsh doesn't exist at that path (e.g. check standard paths)
+        if (!fs.existsSync(shell)) {
+            if (fs.existsSync('/bin/zsh')) {
+                shell = '/bin/zsh';
+            } else {
+                // Ultimate fallback if ZSH is not installed, though user requested strictly ZSH
+                console.warn('ZSH not found, falling back to /bin/bash');
+                shell = '/bin/bash';
+            }
         }
 
-        // 2. Create PTY
         const ptyProcess = pty.spawn(shell, [], {
             name: 'xterm-256color',
             cols: 80,
             rows: 30,
             cwd: process.env.HOME,
-            env: process.env
+            env: {
+                ...process.env,
+                TERM: 'xterm-256color',
+                COLORTERM: 'truecolor'
+            }
         });
 
         ptySessions[id] = ptyProcess;
 
-        // 3. Handle Data
         ptyProcess.on('data', (data) => {
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('terminal-incoming-data', id, data);
@@ -81,7 +90,6 @@ ipcMain.handle('terminal-create', (event, id, customShell) => {
         return shell;
     } catch (error) {
         console.error('Failed to create terminal:', error);
-        // Fallback to a safe shell if the requested one fails
         return 'Error: ' + error.message;
     }
 });
@@ -110,11 +118,11 @@ ipcMain.on('terminal-dispose', (event, id) => {
 });
 
 app.whenReady().then(() => {
-    // Linux transparency flags
     if (process.platform === 'linux') {
         app.commandLine.appendSwitch('enable-transparent-visuals');
         app.commandLine.appendSwitch('disable-gpu');
-        // Sometimes 'disable-gpu' helps with transparency artifacts on Linux
+        // Adding blur capability if supported by compositor
+        app.commandLine.appendSwitch('force-color-profile', 'srgb');
     }
 
     createWindow();
