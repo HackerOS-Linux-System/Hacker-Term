@@ -1,1 +1,38 @@
+[package]
+name = "Hacker-Term"
+version = "0.5.1"
+edition = "2021"
+description = "Hacker Term — Slint-powered beautiful terminal, works on ALL GPUs for HackerOS"
 
+[dependencies]
+# Slint — winit backend, software renderer fallback (works on ALL GPUs)
+# On new hardware: OpenGL/FemtoVG; on old Intel/VM: pure software
+slint            = { version = "1.5", default-features = false, features = [
+    "backend-winit",
+    "renderer-winit-software",
+    "renderer-winit-femtovg",
+    "std",
+    "compat-1-2",
+] }
+
+# Font rendering (CPU, for terminal canvas)
+fontdue          = "0.8"
+
+# PTY
+portable-pty     = "0.8"
+
+# Utilities
+bitflags         = "2"
+anyhow           = "1"
+log              = "0.4"
+env_logger       = "0.11"
+unicode-width    = "0.1"
+
+[build-dependencies]
+slint-build      = "1.5"
+
+[profile.release]
+opt-level        = 3
+lto              = "thin"
+codegen-units    = 1
+strip            = true
