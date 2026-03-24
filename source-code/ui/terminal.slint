@@ -20,18 +20,27 @@ export component HackerTermWindow inherits Window {
     preferred-width: 1200px;
     preferred-height: 720px;
 
-    in property <image> canvas-image;
-    in property <[string]> tab-titles;
-    in property <int> active-tab: 0;
-    out property <length> win-width:  root.width;
-    out property <length> win-height: root.height;
+    // Właściwości
+    in property <image> canvas_image;
+    in property <[string]> tab_titles;
+    in property <int> active_tab: 0;
+    out property <length> win_width: root.width;
+    out property <length> win_height: root.height;
 
-    callback key-input(string, bool, bool, bool);
-    callback new-tab();
-    callback close-tab(int);
-    callback switch-tab(int);
-    callback scroll-up();
-    callback scroll-down();
+    // Callbacki do Rust
+    callback key_input(string, bool, bool, bool);
+    callback new_tab();
+    callback close_tab(int);
+    callback switch_tab(int);
+    callback scroll_up();
+    callback scroll_down();
+    callback move_tab(int, int);
+    callback mouse_pressed(float, float, int);
+    callback mouse_moved(float, float);
+    callback mouse_released(float, float);
+
+    // Stan dla śledzenia przycisku myszy
+    property <bool> prev_pressed: false;
 
     // Tło glassmorphism
     Rectangle {
@@ -110,13 +119,12 @@ export component HackerTermWindow inherits Window {
                 spacing: 4px;
                 alignment: start;
 
-                for title[i] in root.tab-titles : Rectangle {
+                for title[i] in root.tab_titles : Rectangle {
                     height: 32px;
-                    background: i == root.active-tab ? Theme.glassHover : transparent;
+                    background: i == root.active_tab ? Theme.glassHover : transparent;
                     border-radius: 10px;
                     border-width: 1px;
-                    border-color: i == root.active-tab ? Theme.accent : Theme.glassBorder;
-
+                    border-color: i == root.active_tab ? Theme.accent : Theme.glassBorder;
                     states [
                         hovered : {
                             background: Theme.glassHover;
@@ -132,14 +140,14 @@ export component HackerTermWindow inherits Window {
                         Text {
                             text: title;
                             font-size: 12px;
-                            color: i == root.active-tab ? Theme.accent : Theme.fgDim;
+                            color: i == root.active_tab ? Theme.accent : Theme.fgDim;
                             vertical-alignment: center;
                         }
 
                         TouchArea {
                             width: 20px;
                             height: 20px;
-                            clicked => { root.close-tab(i); }
+                            clicked => { root.close_tab(i); }
                             Rectangle {
                                 width: 100%; height: 100%;
                                 border-radius: 10px;
@@ -155,14 +163,14 @@ export component HackerTermWindow inherits Window {
                         }
                     }
 
-                    touch := TouchArea {
-                        clicked => { root.switch-tab(i); }
+                    tab_touch := TouchArea {
+                        clicked => { root.switch_tab(i); }
                     }
                 }
 
                 TouchArea {
                     width: 32px; height: 32px;
-                    clicked => { root.new-tab(); }
+                    clicked => { root.new_tab(); }
                     Rectangle {
                         width: 100%; height: 100%;
                         border-radius: 10px;
@@ -193,7 +201,7 @@ export component HackerTermWindow inherits Window {
             background: transparent;
             clip: true;
 
-            if root.tab-titles.length > 0 && root.active-tab >= 0 && root.active-tab < root.tab-titles.length : Rectangle {
+            if root.tab_titles.length > 0 && root.active_tab >= 0 && root.active_tab < root.tab_titles.length : Rectangle {
                 y: 0px; width: parent.width; height: 28px;
                 background: rgba(0,0,0,0.7);
                 border-radius: 12px;
@@ -207,25 +215,47 @@ export component HackerTermWindow inherits Window {
 
             Image {
                 width: parent.width; height: parent.height;
-                source: root.canvas-image;
+                source: root.canvas_image;
                 image-rendering: pixelated;
             }
 
             fs := FocusScope {
                 width: parent.width; height: parent.height;
 
-                TouchArea {
+                canvas_touch := TouchArea {
                     width: parent.width; height: parent.height;
                     clicked => { fs.focus(); }
+                    moved => {
+                        let mouse_x = canvas_touch.mouse-x / 1px;
+                        let mouse_y = canvas_touch.mouse-y / 1px;
+                        if (canvas_touch.pressed) {
+                            // Przycisk wciśnięty – rozpoczęcie lub kontynuacja przeciągania
+                            if (!root.prev_pressed) {
+                                // Początek przeciągania
+                                root.mouse_pressed(mouse_x, mouse_y, 1);
+                                root.prev_pressed = true;
+                            }
+                            root.mouse_moved(mouse_x, mouse_y);
+                        } else {
+                            if (root.prev_pressed) {
+                                // Zakończenie przeciągania
+                                root.mouse_released(mouse_x, mouse_y);
+                                root.prev_pressed = false;
+                            } else {
+                                // Zwykły ruch bez przycisku – tylko aktualizacja pozycji (opcjonalnie)
+                                root.mouse_moved(mouse_x, mouse_y);
+                            }
+                        }
+                    }
                     scroll-event(ev) => {
-                        if (ev.delta-y > 0) { root.scroll-up(); }
-                        else { root.scroll-down(); }
+                        if (ev.delta-y > 0) { root.scroll_up(); }
+                        else { root.scroll_down(); }
                         accept
                     }
                 }
 
                 key-pressed(event) => {
-                    root.key-input(
+                    root.key_input(
                         event.text,
                         event.modifiers.control,
                         event.modifiers.alt,
@@ -255,7 +285,7 @@ export component HackerTermWindow inherits Window {
                 }
                 HorizontalLayout {
                     spacing: 12px; alignment: center;
-                    Text { text: "Ctrl+T ⇢ nowa karta  |  Ctrl+W ⇢ zamknij"; font-size: 9px; color: Theme.fgDim; }
+                    Text { text: "Ctrl+T ⇢ nowa karta  |  Ctrl+W ⇢ zamknij  |  Ctrl+Shift+C/V ⇢ kopiuj/wklej"; font-size: 9px; color: Theme.fgDim; }
                     Rectangle {
                         width: 8px; height: 8px; border-radius: 4px;
                         background: Theme.accent;
