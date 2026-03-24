@@ -1,13 +1,12 @@
 [package]
 name = "Hacker-Term"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 description = "Hacker Term — Slint-powered beautiful terminal, works on ALL GPUs for HackerOS"
 
 [dependencies]
 # Slint — winit backend, software renderer fallback (works on ALL GPUs)
-# On new hardware: OpenGL/FemtoVG; on old Intel/VM: pure software
-slint            = { version = "1.5", default-features = false, features = [
+slint = { version = "1.5", default-features = false, features = [
     "backend-winit",
     "renderer-winit-software",
     "renderer-winit-femtovg",
@@ -16,23 +15,30 @@ slint            = { version = "1.5", default-features = false, features = [
 ] }
 
 # Font rendering (CPU, for terminal canvas)
-fontdue          = "0.8"
+fontdue = "0.8"
 
 # PTY
-portable-pty     = "0.8"
+portable-pty = "0.8"
 
 # Utilities
-bitflags         = "2"
-anyhow           = "1"
-log              = "0.4"
-env_logger       = "0.11"
-unicode-width    = "0.1"
+bitflags = "2"
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+unicode-width = "0.1"
+hk-parser = "0.2.1"            # konfiguracja .hk
+arboard = "3.2"                # schowek
+image = "0.24"                 # dekodowanie obrazów dla Sixel
+lazy_static = "1.4"
+regex = "1.10"
+ctrlc = "3.4"                  # obsługa Ctrl+C przy zamykaniu
+indexmap = "2.0"               # potrzebne dla hk-parser
 
 [build-dependencies]
-slint-build      = "1.5"
+slint-build = "1.5"
 
 [profile.release]
-opt-level        = 3
-lto              = "thin"
-codegen-units    = 1
-strip            = true
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
