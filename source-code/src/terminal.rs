@@ -1,4 +1,5 @@
 use unicode_width::UnicodeWidthChar;
+use bitflags::bitflags;
 
 #[derive(Clone, Debug)]
 pub struct Cell {
@@ -15,7 +16,7 @@ pub enum Color {
     Rgb(u8, u8, u8),
 }
 
-bitflags::bitflags! {
+bitflags! {
     #[derive(Clone, Copy, Debug, Default, PartialEq)]
     pub struct CellFlags: u8 {
         const BOLD      = 0b0000_0001;
@@ -34,7 +35,28 @@ impl Default for Cell {
     }
 }
 
-enum State { Ground, Escape, Csi(String), Osc(String), CharSet }
+#[derive(Clone, Debug, PartialEq)]
+pub enum Selection {
+    None,
+    Rectangular { start_x: u16, start_y: u16, end_x: u16, end_y: u16 },
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum FlowControl {
+    Running,
+    Stopped,
+}
+
+#[derive(Clone)]
+pub struct SixelImage {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+    pub data: Vec<u8>, // RGBA
+}
+
+enum State { Ground, Escape, Csi(String), Osc(String), CharSet, Dcs(String) }
 
 pub struct Terminal {
     pub cols: u16, pub rows: u16,
@@ -48,6 +70,17 @@ pub struct Terminal {
     pub scroll_off: i32,
     state: State,
     pub title: String,
+
+    // Nowe pola
+    pub alt_screen: Option<Vec<Vec<Cell>>>,
+    pub in_alt_screen: bool,
+    pub flow_control: FlowControl,
+    pub selection: Selection,
+    pub sixel_images: Vec<SixelImage>,
+    dcs_buf: String,
+    pub sixel_enabled: bool,
+    pub sixel_max_w: u32,
+    pub sixel_max_h: u32,
 }
 
 impl Terminal {
@@ -64,7 +97,22 @@ impl Terminal {
             scroll_off: 0,
             state: State::Ground,
             title: "NeonTerm".into(),
+            alt_screen: None,
+            in_alt_screen: false,
+            flow_control: FlowControl::Running,
+            selection: Selection::None,
+            sixel_images: Vec::new(),
+            dcs_buf: String::new(),
+            sixel_enabled: true,
+            sixel_max_w: 800,
+            sixel_max_h: 600,
         }
+    }
+
+    pub fn set_sixel_config(&mut self, enabled: bool, max_w: u32, max_h: u32) {
+        self.sixel_enabled = enabled;
+        self.sixel_max_w = max_w;
+        self.sixel_max_h = max_h;
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
@@ -75,6 +123,10 @@ impl Terminal {
         self.cx = self.cx.min(cols.saturating_sub(1));
         self.cy = self.cy.min(rows.saturating_sub(1));
         self.scroll_top = 0; self.scroll_bot = rows - 1;
+        if let Some(alt) = &mut self.alt_screen {
+            for row in &mut *alt { row.resize(cols as usize, Cell::default()); }
+            alt.resize(rows as usize, vec![Cell::default(); cols as usize]);
+        }
     }
 
     pub fn scroll_view(&mut self, delta: i32) {
@@ -82,6 +134,9 @@ impl Terminal {
     }
 
     pub fn feed(&mut self, data: &[u8]) {
+        if self.flow_control == FlowControl::Stopped {
+            return;
+        }
         self.scroll_off = 0;
         for ch in String::from_utf8_lossy(data).chars() { self.step(ch); }
     }
@@ -93,6 +148,7 @@ impl Terminal {
             State::Csi(_)   => self.csi_ch(c),
             State::Osc(_)   => self.osc_ch(c),
             State::CharSet  => { self.state = State::Ground; }
+            State::Dcs(_)   => self.dcs_ch(c),
         }
     }
 
@@ -115,6 +171,10 @@ impl Terminal {
             '[' => self.state = State::Csi(String::new()),
             ']' => self.state = State::Osc(String::new()),
             '('|')'|'*'|'+' => self.state = State::CharSet,
+            'P' => {
+                self.state = State::Dcs(String::new());
+                self.dcs_buf.clear();
+            }
             'D' => self.lf(),
             'E' => { self.cx = 0; self.lf(); }
             'M' => self.ri(),
@@ -141,6 +201,27 @@ impl Terminal {
                 let s = buf.clone(); self.state = State::Ground;
                 if s.starts_with("0;") || s.starts_with("2;") { self.title = s[2..].into(); }
             } else { buf.push(c); }
+        }
+    }
+
+    fn dcs_ch(&mut self, c: char) {
+        if let State::Dcs(ref mut buf) = self.state {
+            if c == '\x1b' {
+                let dcs_data = std::mem::take(buf);
+                self.state = State::Ground;
+                self.handle_dcs(&dcs_data);
+            } else {
+                buf.push(c);
+            }
+        }
+    }
+
+    fn handle_dcs(&mut self, data: &str) {
+        if data.starts_with("q") && self.sixel_enabled {
+            let sixel_data = data[1..].as_bytes();
+            if let Some(img) = crate::sixel::parse_sixel(sixel_data, self.cx, self.cy, self.cols, self.sixel_max_w, self.sixel_max_h) {
+                self.sixel_images.push(img);
+            }
         }
     }
 
@@ -179,7 +260,38 @@ impl Terminal {
     }
 
     fn dec(&mut self, ns: &[u32], v: bool) {
-        for &n in ns { match n { 25 => self.cursor_visible=v, 47|1047|1049 => if v { self.clear(); } _ => {} } }
+        for &n in ns {
+            match n {
+                25 => self.cursor_visible = v,
+                47|1047|1049 => {
+                    if v {
+                        self.switch_to_alt_screen();
+                    } else {
+                        self.switch_to_main_screen();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn switch_to_alt_screen(&mut self) {
+        if !self.in_alt_screen {
+            self.alt_screen = Some(self.screen.clone());
+            self.screen = vec![vec![Cell::default(); self.cols as usize]; self.rows as usize];
+            self.in_alt_screen = true;
+            self.cx = 0; self.cy = 0;
+        }
+    }
+
+    pub fn switch_to_main_screen(&mut self) {
+        if self.in_alt_screen {
+            if let Some(main) = self.alt_screen.take() {
+                self.screen = main;
+            }
+            self.in_alt_screen = false;
+            self.cx = 0; self.cy = 0;
+        }
     }
 
     fn sgr(&mut self, ps: &[u32]) {
@@ -286,5 +398,60 @@ impl Terminal {
             lines.extend(self.screen[..(need-lines.len()).min(self.screen.len())].iter());
         } else { lines.truncate(need); }
         lines
+    }
+
+    pub fn start_selection(&mut self, x: u16, y: u16) {
+        self.selection = Selection::Rectangular { start_x: x, start_y: y, end_x: x, end_y: y };
+    }
+
+    // Poprawiona metoda – użyto referencji i bez dereferencji
+    pub fn update_selection(&mut self, x: u16, y: u16) {
+        if let Selection::Rectangular { start_x, start_y, .. } = &self.selection {
+            self.selection = Selection::Rectangular {
+                start_x: *start_x,
+                start_y: *start_y,
+                end_x: x,
+                end_y: y,
+            };
+        }
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection = Selection::None;
+    }
+
+    pub fn get_selected_text(&self) -> String {
+        match &self.selection {
+            Selection::Rectangular { start_x, start_y, end_x, end_y } => {
+                let x1 = *start_x.min(end_x);
+                let x2 = *start_x.max(end_x);
+                let y1 = *start_y.min(end_y);
+                let y2 = *start_y.max(end_y);
+                let mut text = String::new();
+                for y in y1..=y2 {
+                    let row = if (y as usize) < self.screen.len() {
+                        &self.screen[y as usize]
+                    } else {
+                        continue;
+                    };
+                    for x in x1..=x2 {
+                        if (x as usize) < row.len() {
+                            text.push(row[x as usize].ch);
+                        }
+                    }
+                    if y != y2 { text.push('\n'); }
+                }
+                text
+            }
+            Selection::None => String::new(),
+        }
+    }
+
+    pub fn flow_control_stop(&mut self) {
+        self.flow_control = FlowControl::Stopped;
+    }
+
+    pub fn flow_control_start(&mut self) {
+        self.flow_control = FlowControl::Running;
     }
 }
