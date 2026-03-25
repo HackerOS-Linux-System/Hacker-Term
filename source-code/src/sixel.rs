@@ -1,6 +1,5 @@
 use crate::terminal::SixelImage;
-use image::{ImageBuffer, Rgba, RgbaImage};
-use std::collections::VecDeque;
+use image::{Rgba, RgbaImage};
 
 /// Parsuje dane Sixel (sekwencja DCS q ... ST) i zwraca obraz w formacie RGBA.
 /// Wspiera tylko podstawowe kodowanie – w pełnej wersji należałoby zaimplementować
@@ -9,14 +8,12 @@ pub fn parse_sixel(
     data: &[u8],
     x: u16,
     y: u16,
-    max_cells: u16,
-    max_width: u32,
-    max_height: u32,
+    _max_cells: u16,        // prefiks _ oznacza, że zmienna jest nieużywana (unikanie ostrzeżenia)
+max_width: u32,
+max_height: u32,
 ) -> Option<SixelImage> {
     // Konwersja danych Sixel na surowe RGBA.
-    // Tutaj uproszczona wersja – zakładamy, że dane to już zakodowany obraz PNG/JPG?
-    // W rzeczywistości Sixel używa własnego formatu opartego na kolorach i kompresji.
-    // Dla przykładu, jeśli dane zaczynają się od magicznych bajtów PNG, wczytujemy jako PNG.
+    // Jeśli dane zaczynają się od magicznych bajtów PNG, wczytujemy jako PNG.
     if data.len() > 8 && &data[0..8] == b"\x89PNG\r\n\x1a\n" {
         if let Ok(img) = image::load_from_memory(data) {
             let rgba = img.into_rgba8();
@@ -35,6 +32,8 @@ pub fn parse_sixel(
 
     // Fallback – próba parsowania prostego Sixel (tylko kolory 0-15, brak RLE)
     // To tylko szkic – prawdziwy parser jest znacznie bardziej złożony.
+    use std::collections::VecDeque;
+
     let mut lines = VecDeque::new();
     let mut current_line = Vec::new();
     for &byte in data {
