@@ -29,8 +29,8 @@ impl Default for Config {
 impl Config {
     pub fn load() -> Result<Self> {
         let config_path = dirs::home_dir()
-        .expect("Could not find home directory")
-        .join(".config/hacker-term/config.hk");
+            .expect("Could not find home directory")
+            .join(".config/hacker-term/config.hk");
 
         let mut raw = if config_path.exists() {
             load_hk_file(&config_path).context("Failed to parse config.hk")?
@@ -48,7 +48,7 @@ impl Config {
         // ── general ──────────────────────────────────────────────────────────
         let mut g = IndexMap::new();
         g.insert("font_size".into(),             HkValue::Number(14.0));
-        g.insert("shell".into(),                 HkValue::String(env::var("SHELL").unwrap_or("/bin/zsh".into())));
+        g.insert("shell".into(),                 HkValue::String("/usr/bin/hsh".into()));
         g.insert("padding".into(),               HkValue::Number(10.0));
         g.insert("window_transparency".into(),   HkValue::Number(220.0));  // półprzezroczyste domyślnie
         g.insert("motion_blur_strength".into(),  HkValue::Number(0.12));
@@ -156,7 +156,7 @@ impl GeneralConfig {
     fn from_hk(m: &IndexMap<String, HkValue>) -> Self {
         Self {
             font_size:            get_f32(m, "font_size", 14.0),
-            shell:                get_str(m, "shell", &env::var("SHELL").unwrap_or("/bin/zsh".into())),
+            shell:                get_str(m, "shell", "/usr/bin/hsh"),
             padding:              get_f32(m, "padding", 10.0) as u32,
             window_transparency:  get_f32(m, "window_transparency", 220.0) as u8,
             motion_blur_strength: get_f32(m, "motion_blur_strength", 0.12),
@@ -170,7 +170,7 @@ impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
             font_size: 14.0,
-            shell: env::var("SHELL").unwrap_or("/bin/zsh".into()),
+            shell: "/usr/bin/hsh".into(),
             padding: 10,
             window_transparency: 220,
             motion_blur_strength: 0.12,
@@ -325,8 +325,8 @@ pub fn parse_color(s: &str) -> Option<Rgb> {
     if s.len() == 6 {
         Some(Rgb(
             u8::from_str_radix(&s[0..2], 16).ok()?,
-                 u8::from_str_radix(&s[2..4], 16).ok()?,
-                 u8::from_str_radix(&s[4..6], 16).ok()?,
+            u8::from_str_radix(&s[2..4], 16).ok()?,
+            u8::from_str_radix(&s[4..6], 16).ok()?,
         ))
     } else { None }
 }
