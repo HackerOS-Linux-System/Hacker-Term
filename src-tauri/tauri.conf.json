@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "HackerTerm",
+  "version": "0.8.0",
+  "identifier": "com.hackeros.hacker-term",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "HackerTerm",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 600,
+        "minHeight": 400,
+        "decorations": false,
+        "transparent": true,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/logo.png"
+    ],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
+  }
+}
