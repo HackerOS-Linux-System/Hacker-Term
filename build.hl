@@ -1,4 +1,6 @@
 // cargo
+// npm
 
 > cd source-code
-> cargo build --release
+> npm install
+> npm run tauri build
