@@ -1,1 +1,34 @@
+! ─────────────────────────────────────────────────────────────
+! HackerTerm Configuration File — format: .hk (HackerOS)
+! Location: ~/.config/HackerOS/Hacker-Term/config.hk
+!
+! This file is auto-generated on first run and auto-saved
+! whenever you change settings in the UI.
+! You can also edit it manually — changes take effect on restart.
+!
+! Format reference: https://hackeros-linux-system.github.io/HackerOS-Website/tools-docs/hk.html
+! ─────────────────────────────────────────────────────────────
 
+[appearance]
+! Color theme. Available: "Hacker (Default)", "Cyberpunk", "Dracula", "Nord Dark", "Tokyo Night"
+-> theme   => Hacker (Default)
+! Window background opacity (0.3 – 1.0)
+-> opacity => 0.97
+! Backdrop blur in pixels (0 – 40)
+-> blur    => 16
+! Interface language: "en" or "pl"
+-> language => en
+
+[terminal]
+! Font size in pixels (10 – 32)
+-> font_size    => 14
+! Font family: "Fira Code", "JetBrains Mono", "Hack", "monospace"
+-> font_family  => Fira Code
+! Inner padding in pixels (0 – 50)
+-> padding      => 20
+! Cursor style: "block", "bar", "underline"
+-> cursor_style => block
+! Cursor blinking: true / false
+-> cursor_blink => true
+! Shell (always zsh in HackerTerm; kept for metadata)
+-> shell        => zsh
