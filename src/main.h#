@@ -1,0 +1,39 @@
+using "2026"
+;; HackerTerm — emulator terminala dla HackerOS.
+;; Backend H# (PTY przez native/pty_shim.c), okno i render: Silver, frontend: TypeScript + Solid.js.
+use "bit -> silver" from "silver"
+mod config
+mod pty
+mod commands
+mod assets_gen   ;; GENEROWANY: frontend + ikona wbudowane w binarkę (frontend/scripts/embed.mjs)
+
+fn main() is
+    assets_gen::install()   ;; zasoby z pamięci — binarka nie potrzebuje katalogu frontend/
+    pty::init()
+    commands::ensure_config()
+
+    let mut a = app::new("HackerTerm", 1200, 800)
+    a = app::set_min_size(a, 600, 400)
+    a = app::set_frameless(a, 6)                 ;; własny pasek tytułu (app-region: drag w CSS)
+    a = app::remember_window(a, "hacker-term")   ;; pozycja i rozmiar okna między uruchomieniami
+    a = app::set_icon(a, "images/logo.png")
+    a = app::load_html(a, "frontend/index.html")
+    a = app::load_css(a, "frontend/style.css")
+
+    a = app::command(a, "create_terminal", commands::create_terminal)
+    a = app::command(a, "write_terminal",  commands::write_terminal)
+    a = app::command(a, "resize_terminal", commands::resize_terminal)
+    a = app::command(a, "close_terminal",  commands::close_terminal)
+    a = app::command(a, "terminal_cwd",    commands::terminal_cwd)
+    a = app::command(a, "load_config",     commands::load_config)
+    a = app::command(a, "save_config",     commands::save_config)
+    a = app::command(a, "load_session",    commands::load_session)
+    a = app::command(a, "save_session",    commands::save_session)
+    a = app::command(a, "home_dir",        commands::home_dir)
+
+    a = app::on_tick(a, commands::pump)
+    a = app::set_tick_interval(a, 12)            ;; wyjście PTY trafia do widoku co ~12 ms
+
+    a = app::load_js(a, ["frontend/dist/app.js"])
+    app::run(a)
+end
