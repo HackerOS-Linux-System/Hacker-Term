@@ -1,0 +1,77 @@
+using "2026"
+use "std -> test" from "test"
+mod config
+
+fn find(es: [config::Entry], sec: string, key: string, sub: string) -> config::Entry is
+    let mut i: int = 0
+    while i < array_len(es) is
+        if es[i].section == sec && es[i].key == key && es[i].sub == sub is return es[i] end
+        i += 1
+    end
+    return config::Entry { section: "", key: "", sub: "", val: "<missing>", kind: 0 }
+end
+
+#[test]
+fn test_parse_scalars() is
+    let es = config::parse_hk("! komentarz\n[appearance]\n-> theme => Hacker (Default)\n-> opacity => 0.97\n-> blur => 16\n[terminal]\n-> cursor_blink => TRUE\n-> font_family => \"Fira Code\"\n")
+    assert_eq(find(es, "appearance", "theme", "").val, "Hacker (Default)")
+    assert_eq(find(es, "appearance", "opacity", "").kind, 1)
+    assert_eq(find(es, "appearance", "blur", "").val, "16")
+    assert_eq(find(es, "terminal", "cursor_blink", "").kind, 2)
+    assert_eq(find(es, "terminal", "font_family", "").val, "Fira Code")
+end
+
+#[test]
+fn test_parse_maps_and_arrays() is
+    let es = config::parse_hk("[shortcuts]\n-> keys\n--> new_tab => Ctrl+T\n--> close_tab => Ctrl+W\n-> split.right => Ctrl+Alt+D\n[x]\n-> arr => [1, \"a b\", true]\n")
+    assert_eq(find(es, "shortcuts", "keys", "new_tab").val, "Ctrl+T")
+    assert_eq(find(es, "shortcuts", "keys", "close_tab").val, "Ctrl+W")
+    assert_eq(find(es, "shortcuts", "split", "right").val, "Ctrl+Alt+D")
+    assert_eq(find(es, "x", "arr", "").kind, 3)
+end
+
+#[test]
+fn test_roundtrip() is
+    let src = "[a]\n-> s => \"has space\"\n-> n => 3.5\n-> b => false\n-> m\n--> k => v\n\n"
+    let es = config::parse_hk(src)
+    let out = config::serialize_hk(es)
+    let es2 = config::parse_hk(out)
+    assert_eq(find(es2, "a", "s", "").val, "has space")
+    assert_eq(find(es2, "a", "n", "").val, "3.5")
+    assert_eq(find(es2, "a", "b", "").kind, 2)
+    assert_eq(find(es2, "a", "m", "k").val, "v")
+end
+
+#[test]
+fn test_string_that_looks_like_number_survives() is
+    let es = config::put([], config::Entry { section: "t", key: "name", sub: "", val: "123", kind: 0 })
+    let es2 = config::parse_hk(config::serialize_hk(es))
+    assert_eq(find(es2, "t", "name", "").kind, 0)
+    assert_eq(find(es2, "t", "name", "").val, "123")
+end
+
+#[test]
+fn test_json() is
+    let es = config::parse_hk("[a]\n-> s => hi\n-> n => 2\n-> m\n--> k => \"x y\"\n-> l => [1, two]\n")
+    assert_eq(config::to_json(es), "{{\"a\":{{\"s\":\"hi\",\"n\":2,\"m\":{{\"k\":\"x y\"}},\"l\":[1,\"two\"]}}}}")
+end
+
+#[test]
+fn test_defaults_roundtrip() is
+    let d = config::default_entries()
+    let es = config::parse_hk(config::serialize_hk(d))
+    assert_eq(find(es, "terminal", "font_size", "").val, "14")
+    assert_eq(find(es, "advanced", "restore_session", "").kind, 2)
+end
+
+#[test]
+fn test_plain_strings_stay_unquoted() is
+    let d = config::serialize_hk(config::default_entries())
+    assert_eq(string_find(d, "-> theme => Hacker (Default)") >= 0, true)
+    assert_eq(string_find(d, "-> font_family => DejaVu Sans Mono") >= 0, true)
+    let es = config::put([], config::Entry { section: "t", key: "p", sub: "", val: "C:\\dir x", kind: 0 })
+    let back = config::parse_hk(config::serialize_hk(es))
+    assert_eq(find(back, "t", "p", "").val, "C:\\dir x")
+    let es2 = config::put([], config::Entry { section: "t", key: "p", sub: "", val: " pad ", kind: 0 })
+    assert_eq(find(config::parse_hk(config::serialize_hk(es2)), "t", "p", "").val, " pad ")
+end
