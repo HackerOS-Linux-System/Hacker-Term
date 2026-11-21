@@ -1,0 +1,216 @@
+using "2026"
+;; commands.h# — komendy wołane z frontendu przez silver.invoke() (zamiennik commands.rs z Tauri).
+;; Handler: fn(string) -> string (JSON → JSON). Błąd = {"error": "...", "code": "..."} → odrzucony Promise.
+use "bit -> silver" from "silver"
+use "std -> fs"  from "fs"
+use "std -> env" from "env"
+mod config
+mod pty
+
+fn err(code: string, msg: string) -> string is
+    return ipc::error_json(code, msg)
+end
+
+fn ok() -> string is
+    return "{{\"ok\": true}}"
+end
+
+fn cfg_dir() -> string is
+    return config::config_dir(env::get_or("HOME", "/tmp"))
+end
+
+fn cfg_path() -> string is
+    return cfg_dir() + "/config.hk"
+end
+
+fn session_path() -> string is
+    return cfg_dir() + "/session.json"
+end
+
+fn ensure_dir() is
+    fs::mkdir(env::get_or("HOME", "/tmp") + "/.config")
+    fs::mkdir(env::get_or("HOME", "/tmp") + "/.config/HackerOS")
+    fs::mkdir(cfg_dir())
+end
+
+;; ── terminal (PTY) ────────────────────────────────────────
+
+;; {id, cols, rows, shell?, cwd?, env?: "K=V\n…"} → {"id": n}
+pub fn create_terminal(args: string) -> string is
+    let id: int = data::get_int(args, "id")
+    let mut cols: int = data::get_int(args, "cols")
+    let mut rows: int = data::get_int(args, "rows")
+    if cols < 2 is cols = 80 end
+    if rows < 2 is rows = 24 end
+    let good: bool = pty::open(id, cols, rows, data::get_str(args, "shell"), data::get_str(args, "cwd"), data::get_str(args, "env"))
+    if !good is return err("pty_failed", "cannot open PTY session " + to_string(id)) end
+    return data::set_int(data::object(), "id", id)
+end
+
+;; {id, data: base64}
+pub fn write_terminal(args: string) -> string is
+    if !pty::write(data::get_int(args, "id"), data::get_str(args, "data")) is
+        return err("not_found", "session not found")
+    end
+    return ok()
+end
+
+pub fn resize_terminal(args: string) -> string is
+    if !pty::resize(data::get_int(args, "id"), data::get_int(args, "cols"), data::get_int(args, "rows")) is
+        return err("not_found", "session not found")
+    end
+    return ok()
+end
+
+pub fn close_terminal(args: string) -> string is
+    pty::close(data::get_int(args, "id"))
+    return ok()
+end
+
+;; → {"cwd": "/ścieżka"} (do zapisu sesji)
+pub fn terminal_cwd(args: string) -> string is
+    return data::set_str(data::object(), "cwd", pty::cwd(data::get_int(args, "id")))
+end
+
+;; ── konfiguracja .hk ──────────────────────────────────────
+
+fn load_entries() -> [config::Entry] is
+    if fs::exists(cfg_path()) is
+        return config::parse_hk(fs::read(cfg_path()))
+    end
+    return config::default_entries()
+end
+
+pub fn ensure_config() is
+    if !fs::exists(cfg_path()) is
+        ensure_dir()
+        fs::write(cfg_path(), config::serialize_hk(config::default_entries()))
+    end
+end
+
+;; → {"appearance": {...}, "terminal": {...}, ...}; brakujące klucze uzupełnia frontend domyślnymi
+pub fn load_config(args: string) -> string is
+    ensure_config()
+    return config::to_json(load_entries())
+end
+
+;; {config: {sekcja: {klucz: wartość | {pod: wartość}}}} — zapis scala się z istniejącym plikiem
+pub fn save_config(args: string) -> string is
+    let cfg: string = data::get_raw(args, "config")
+    if cfg == "" || cfg == "null" is return err("invalid_args", "missing config") end
+    let mut es: [config::Entry] = load_entries()
+    let secs: [string] = data::keys(cfg)
+    let mut i: int = 0
+    while i < array_len(secs) is
+        let sec_raw: string = data::get_raw(cfg, secs[i])
+        let keys: [string] = data::keys(sec_raw)
+        let mut j: int = 0
+        while j < array_len(keys) is
+            let raw: string = data::get_raw(sec_raw, keys[j])
+            if string_starts_with(raw, "{{") is
+                let subs: [string] = data::keys(raw)
+                let mut k: int = 0
+                while k < array_len(subs) is
+                    es = config::put(es, entry_from_raw(secs[i], keys[j], subs[k], data::get_raw(raw, subs[k])))
+                    k += 1
+                end
+            else is
+                es = config::put(es, entry_from_raw(secs[i], keys[j], "", raw))
+            end
+            j += 1
+        end
+        i += 1
+    end
+    ensure_dir()
+    fs::write(cfg_path(), config::serialize_hk(es))
+    return ok()
+end
+
+fn join_list(items: [string], sep: string) -> string is
+    let mut out: string = ""
+    let mut i: int = 0
+    while i < array_len(items) is
+        if i > 0 is out = out + sep end
+        out = out + items[i]
+        i += 1
+    end
+    return out
+end
+
+;; surowy JSON (liczba | true/false | "napis" | [..]) → wpis .hk
+fn entry_from_raw(section: string, key: string, sub: string, raw: string) -> config::Entry is
+    if raw == "true" || raw == "false" is
+        return config::Entry { section: section, key: key, sub: sub, val: raw, kind: 2 }
+    end
+    if string_starts_with(raw, "\"") is
+        return config::Entry { section: section, key: key, sub: sub, val: data::text(raw), kind: 0 }
+    end
+    if string_starts_with(raw, "[") is
+        let items: [string] = data::items(raw)
+        let mut parts: [string] = []
+        let mut n: int = 0
+        while n < array_len(items) is
+            let it: string = items[n]
+            if string_starts_with(it, "\"") is
+                parts = array_push(parts, config::json_quote(data::text(it)))
+            else is
+                parts = array_push(parts, it)
+            end
+            n += 1
+        end
+        return config::Entry { section: section, key: key, sub: sub, val: join_list(parts, ", "), kind: 3 }
+    end
+    return config::Entry { section: section, key: key, sub: sub, val: raw, kind: 1 }
+end
+
+;; ── sesja (karty/panele) ──────────────────────────────────
+
+pub fn load_session(args: string) -> string is
+    if !fs::exists(session_path()) is return "{{\"tabs\": []}}" end
+    return fs::read(session_path())
+end
+
+;; {session: {...}}
+pub fn save_session(args: string) -> string is
+    ensure_dir()
+    fs::write(session_path(), data::get_raw(args, "session"))
+    return ok()
+end
+
+pub fn home_dir(args: string) -> string is
+    return data::set_str(data::object(), "home", env::get_or("HOME", "/"))
+end
+
+;; ── pompa PTY → frontend (wołana cyklicznie z on_tick) ────
+
+pub fn pump(a0: app::App) -> app::App is
+    let a: app::App = a0
+    let top: int = pty::max_id()
+    let mut id: int = 1
+    while id <= top is
+        if pty::is_open(id) is
+            let mut rounds: int = 0
+            while rounds < 8 is
+                let chunk: string = pty::read(id)
+                if chunk == "" is break end
+                let mut j: string = data::set_int(data::object(), "id", id)
+                j = data::set_str(j, "data", chunk)
+                app::emit(a, "terminal-data", j)
+                rounds += 1
+            end
+            if !pty::alive(id) is
+                ;; dopisz ostatnie bajty, które mogły dojść tuż przed zakończeniem
+                let tail: string = pty::read(id)
+                if tail != "" is
+                    let mut j2: string = data::set_int(data::object(), "id", id)
+                    j2 = data::set_str(j2, "data", tail)
+                    app::emit(a, "terminal-data", j2)
+                end
+                app::emit(a, "terminal-exit", data::set_int(data::object(), "id", id))
+                pty::close(id)
+            end
+        end
+        id += 1
+    end
+    return a
+end
