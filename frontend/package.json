@@ -1,0 +1,29 @@
+{
+  "name": "hacker-term-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "HackerTerm — frontend (TypeScript + Solid.js) dla Silvera",
+  "scripts": {
+    "gen": "node scripts/gen-locales.mjs",
+    "build": "node scripts/gen-locales.mjs && node build.mjs && node scripts/embed.mjs",
+    "embed": "node scripts/embed.mjs",
+    "watch": "node scripts/gen-locales.mjs && node build.mjs --watch",
+    "typecheck": "node scripts/gen-locales.mjs && tsc --noEmit",
+    "test": "node scripts/gen-locales.mjs && node --import tsx --test test/*.test.ts",
+    "e2e": "node test/e2e.mjs"
+  },
+  "dependencies": {
+    "@types/node": "^26.6.6",
+    "solid-js": "^1.9.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@hackeros/silver-types": "^0.5.0",
+    "babel-preset-solid": "^1.9.3",
+    "esbuild": "^0.24.0",
+    "esbuild-plugin-solid": "^0.6.0",
+    "jsdom": "^31.0.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
