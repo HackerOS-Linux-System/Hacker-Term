@@ -1,0 +1,389 @@
+using "2026"
+;; config.h# — parser i serializer formatu `.hk` (port src-tauri/src/config.rs).
+;; Moduł jest czysty (bez zależności od Silvera), więc testuje go `bit test` / `h# test tests/config_test.h#`.
+;;
+;; Format:
+;;   [sekcja]
+;;   -> klucz => wartość          ;; wartość: true/false, liczba, "napis", napis, [a, b, "c d"]
+;;   -> mapa                      ;; deklaracja mapy
+;;   --> podklucz => wartość      ;; wpis mapy (też: -> mapa.podklucz => wartość)
+;;   ! komentarz
+
+;; kind: 0 = napis, 1 = liczba, 2 = bool, 3 = tablica (val = surowa zawartość między [ ])
+pub struct Entry is
+    pub section: string
+    pub key:     string
+    pub sub:     string    ;; "" = wpis zwykły; inaczej wpis mapy `key`
+    pub val:     string
+    pub kind:    int
+end
+
+fn mk(section: string, key: string, sub: string, val: string, kind: int) -> Entry is
+    return Entry { section: section, key: key, sub: sub, val: val, kind: kind }
+end
+
+;; ── pomocnicze ─────────────────────────────────────────────
+
+pub fn is_number(s: string) -> bool is
+    let n: int = string_len(s)
+    if n == 0 is return false end
+    let digits: string = "0123456789"
+    let mut i: int = 0
+    let mut seen_digit: bool = false
+    let mut seen_dot: bool = false
+    if string_slice(s, 0, 1) == "-" || string_slice(s, 0, 1) == "+" is i = 1 end
+    while i < n is
+        let c: string = string_slice(s, i, i + 1)
+        if c == "." is
+            if seen_dot is return false end
+            seen_dot = true
+        elsif string_find(digits, c) >= 0 is
+            seen_digit = true
+        else is
+            return false
+        end
+        i += 1
+    end
+    return seen_digit
+end
+
+fn unquote(raw: string) -> string is
+    let n: int = string_len(raw)
+    let inner: string = string_slice(raw, 1, n - 1)
+    let mut out: string = ""
+    let m: int = string_len(inner)
+    let mut i: int = 0
+    while i < m is
+        let c: string = string_slice(inner, i, i + 1)
+        if c == "\\" && i + 1 < m is
+            let e: string = string_slice(inner, i + 1, i + 2)
+            if e == "n" is
+                out = out + "\n"
+            elsif e == "t" is
+                out = out + "\t"
+            else is
+                out = out + e       ;; \" -> "   \\ -> \
+            end
+            i += 2
+        else is
+            out = out + c
+            i += 1
+        end
+    end
+    return out
+end
+
+fn is_quoted(s: string) -> bool is
+    return string_len(s) >= 2 && string_slice(s, 0, 1) == "\"" && string_slice(s, string_len(s) - 1, string_len(s)) == "\""
+end
+
+;; Dzieli zawartość tablicy po przecinkach z poszanowaniem cudzysłowów.
+fn split_items(inner: string) -> [string] is
+    let mut out: [string] = []
+    let mut cur: string = ""
+    let mut in_q: bool = false
+    let n: int = string_len(inner)
+    let mut i: int = 0
+    while i < n is
+        let c: string = string_slice(inner, i, i + 1)
+        if c == "\\" && in_q && i + 1 < n is
+            cur = cur + c + string_slice(inner, i + 1, i + 2)
+            i += 2
+            continue
+        end
+        if c == "\"" is in_q = !in_q end
+        if c == "," && !in_q is
+            out = array_push(out, string_trim(cur))
+            cur = ""
+        else is
+            cur = cur + c
+        end
+        i += 1
+    end
+    if string_trim(cur) != "" is out = array_push(out, string_trim(cur)) end
+    return out
+end
+
+;; Zwraca (val, kind) jako Entry pomocniczy (tylko val i kind).
+fn parse_value(raw0: string) -> Entry is
+    let raw: string = string_trim(raw0)
+    let low: string = string_lower(raw)
+    if low == "true" is return mk("", "", "", "true", 2) end
+    if low == "false" is return mk("", "", "", "false", 2) end
+    if is_number(raw) is return mk("", "", "", raw, 1) end
+    let n: int = string_len(raw)
+    if n >= 2 && string_slice(raw, 0, 1) == "[" && string_slice(raw, n - 1, n) == "]" is
+        return mk("", "", "", string_slice(raw, 1, n - 1), 3)
+    end
+    if is_quoted(raw) is return mk("", "", "", unquote(raw), 0) end
+    return mk("", "", "", raw, 0)
+end
+
+;; Wstawia lub zastępuje wpis (section, key, sub).
+pub fn put(entries: [Entry], e: Entry) -> [Entry] is
+    let mut out: [Entry] = []
+    let mut done: bool = false
+    let mut i: int = 0
+    while i < array_len(entries) is
+        let x: Entry = entries[i]
+        if x.section == e.section && x.key == e.key && x.sub == e.sub is
+            out = array_push(out, e)
+            done = true
+        else is
+            out = array_push(out, x)
+        end
+        i += 1
+    end
+    if !done is out = array_push(out, e) end
+    return out
+end
+
+;; ── parser ─────────────────────────────────────────────────
+
+pub fn parse_hk(input: string) -> [Entry] is
+    let mut entries: [Entry] = []
+    let mut section: string = ""
+    let mut have_section: bool = false
+    let mut l1: string = ""          ;; bieżąca mapa (dla `-->`)
+    let lines: [string] = string_split(string_replace(input, "\r", ""), "\n")
+    let mut li: int = 0
+    while li < array_len(lines) is
+        let t: string = string_trim(lines[li])
+        li += 1
+        if t == "" || string_starts_with(t, "!") is continue end
+        let tl: int = string_len(t)
+        if string_starts_with(t, "[") && string_slice(t, tl - 1, tl) == "]" is
+            section = string_trim(string_slice(t, 1, tl - 1))
+            have_section = true
+            l1 = ""
+            continue
+        end
+        if !have_section is continue end
+        if string_starts_with(t, "--> ") is
+            let rest: string = string_slice(t, 4, tl)
+            let p: int = string_find(rest, "=>")
+            if p >= 0 && l1 != "" is
+                let k: string = string_trim(string_slice(rest, 0, p))
+                let v: Entry = parse_value(string_slice(rest, p + 2, string_len(rest)))
+                entries = put(entries, mk(section, l1, k, v.val, v.kind))
+            end
+            continue
+        end
+        if string_starts_with(t, "-> ") is
+            let rest: string = string_slice(t, 3, tl)
+            let p: int = string_find(rest, "=>")
+            if p >= 0 is
+                let k: string = string_trim(string_slice(rest, 0, p))
+                let v: Entry = parse_value(string_slice(rest, p + 2, string_len(rest)))
+                let dot: int = string_find(k, ".")
+                if dot > 0 is
+                    entries = put(entries, mk(section, string_slice(k, 0, dot), string_slice(k, dot + 1, string_len(k)), v.val, v.kind))
+                else is
+                    entries = put(entries, mk(section, k, "", v.val, v.kind))
+                    l1 = ""
+                end
+            else is
+                l1 = string_trim(rest)       ;; deklaracja mapy bez wartości
+            end
+        end
+    end
+    return entries
+end
+
+;; ── serializer ─────────────────────────────────────────────
+
+fn needs_quotes(s: string) -> bool is
+    if s == "" is return true end
+    ;; wartość sięga do końca linii, więc spacje w środku (np. Hacker (Default)) nie wymagają cudzysłowu
+    if string_trim(s) != s is return true end
+    if string_find(s, "\"") >= 0 || string_find(s, "\n") >= 0 || string_find(s, "\t") >= 0 || string_find(s, "\\") >= 0 is return true end
+    ;; napis, który po odczycie zostałby liczbą / bool / tablicą, musi być w cudzysłowie
+    let low: string = string_lower(s)
+    if low == "true" || low == "false" || is_number(s) || string_starts_with(s, "[") || string_starts_with(s, "!") is return true end
+    return false
+end
+
+fn quote_hk(s: string) -> string is
+    let mut o: string = string_replace(s, "\\", "\\\\")
+    o = string_replace(o, "\"", "\\\"")
+    o = string_replace(o, "\n", "\\n")
+    o = string_replace(o, "\t", "\\t")
+    return "\"" + o + "\""
+end
+
+fn serialize_value(e: Entry) -> string is
+    if e.kind == 0 is
+        if needs_quotes(e.val) is return quote_hk(e.val) end
+        return e.val
+    end
+    if e.kind == 3 is return "[" + e.val + "]" end
+    return e.val
+end
+
+pub fn serialize_hk(entries: [Entry]) -> string is
+    let mut out: string = ""
+    let mut seen: [string] = []
+    let mut i: int = 0
+    while i < array_len(entries) is
+        let sec: string = entries[i].section
+        i += 1
+        let mut known: bool = false
+        let mut s: int = 0
+        while s < array_len(seen) is
+            if seen[s] == sec is known = true end
+            s += 1
+        end
+        if known is continue end
+        seen = array_push(seen, sec)
+        out = out + "[" + sec + "]\n"
+        let mut done_maps: [string] = []
+        let mut j: int = 0
+        while j < array_len(entries) is
+            let e: Entry = entries[j]
+            j += 1
+            if e.section != sec is continue end
+            if e.sub == "" is
+                out = out + "-> " + e.key + " => " + serialize_value(e) + "\n"
+            else is
+                let mut printed: bool = false
+                let mut d: int = 0
+                while d < array_len(done_maps) is
+                    if done_maps[d] == e.key is printed = true end
+                    d += 1
+                end
+                if !printed is
+                    done_maps = array_push(done_maps, e.key)
+                    out = out + "-> " + e.key + "\n"
+                    let mut k: int = 0
+                    while k < array_len(entries) is
+                        let m: Entry = entries[k]
+                        k += 1
+                        if m.section == sec && m.key == e.key && m.sub != "" is
+                            out = out + "--> " + m.sub + " => " + serialize_value(m) + "\n"
+                        end
+                    end
+                end
+            end
+        end
+        out = out + "\n"
+    end
+    return out
+end
+
+;; ── JSON (dla frontendu) ───────────────────────────────────
+
+pub fn json_quote(s: string) -> string is
+    let mut o: string = string_replace(s, "\\", "\\\\")
+    o = string_replace(o, "\"", "\\\"")
+    o = string_replace(o, "\n", "\\n")
+    o = string_replace(o, "\r", "\\r")
+    o = string_replace(o, "\t", "\\t")
+    return "\"" + o + "\""
+end
+
+fn array_to_json(inner: string) -> string is
+    let items: [string] = split_items(inner)
+    let mut out: string = "["
+    let mut i: int = 0
+    while i < array_len(items) is
+        if i > 0 is out = out + "," end
+        let v: Entry = parse_value(items[i])
+        out = out + value_json(v.val, v.kind)
+        i += 1
+    end
+    return out + "]"
+end
+
+fn value_json(val: string, kind: int) -> string is
+    if kind == 1 || kind == 2 is return val end
+    if kind == 3 is return array_to_json(val) end
+    return json_quote(val)
+end
+
+;; {"sekcja": {"klucz": wartość, "mapa": {"pod": wartość}}}
+pub fn to_json(entries: [Entry]) -> string is
+    let mut out: string = "{{"
+    let mut seen: [string] = []
+    let mut first_sec: bool = true
+    let mut i: int = 0
+    while i < array_len(entries) is
+        let sec: string = entries[i].section
+        i += 1
+        let mut known: bool = false
+        let mut s: int = 0
+        while s < array_len(seen) is
+            if seen[s] == sec is known = true end
+            s += 1
+        end
+        if known is continue end
+        seen = array_push(seen, sec)
+        if !first_sec is out = out + "," end
+        first_sec = false
+        out = out + json_quote(sec) + ":{{"
+        let mut first_key: bool = true
+        let mut maps: [string] = []
+        let mut j: int = 0
+        while j < array_len(entries) is
+            let e: Entry = entries[j]
+            j += 1
+            if e.section != sec is continue end
+            if e.sub == "" is
+                if !first_key is out = out + "," end
+                first_key = false
+                out = out + json_quote(e.key) + ":" + value_json(e.val, e.kind)
+            else is
+                let mut printed: bool = false
+                let mut d: int = 0
+                while d < array_len(maps) is
+                    if maps[d] == e.key is printed = true end
+                    d += 1
+                end
+                if !printed is
+                    maps = array_push(maps, e.key)
+                    if !first_key is out = out + "," end
+                    first_key = false
+                    out = out + json_quote(e.key) + ":{{"
+                    let mut first_sub: bool = true
+                    let mut k: int = 0
+                    while k < array_len(entries) is
+                        let m: Entry = entries[k]
+                        k += 1
+                        if m.section == sec && m.key == e.key && m.sub != "" is
+                            if !first_sub is out = out + "," end
+                            first_sub = false
+                            out = out + json_quote(m.sub) + ":" + value_json(m.val, m.kind)
+                        end
+                    end
+                    out = out + "}}"
+                end
+            end
+        end
+        out = out + "}}"
+    end
+    return out + "}}"
+end
+
+;; ── domyślna konfiguracja ──────────────────────────────────
+
+pub fn default_entries() -> [Entry] is
+    let mut c: [Entry] = []
+    c = put(c, mk("appearance", "theme", "", "Hacker (Default)", 0))
+    c = put(c, mk("appearance", "opacity", "", "0.97", 1))
+    c = put(c, mk("appearance", "blur", "", "16", 1))
+    c = put(c, mk("appearance", "language", "", "en", 0))
+    c = put(c, mk("terminal", "font_size", "", "14", 1))
+    c = put(c, mk("terminal", "font_family", "", "DejaVu Sans Mono", 0))
+    c = put(c, mk("terminal", "padding", "", "12", 1))
+    c = put(c, mk("terminal", "cursor_style", "", "block", 0))
+    c = put(c, mk("terminal", "cursor_blink", "", "true", 2))
+    c = put(c, mk("terminal", "shell", "", "zsh", 0))
+    c = put(c, mk("terminal", "scrollback", "", "5000", 1))
+    c = put(c, mk("advanced", "restore_session", "", "true", 2))
+    return c
+end
+
+;; ── ścieżki i I/O ──────────────────────────────────────────
+
+pub fn config_dir(home: string) -> string is
+    return home + "/.config/HackerOS/Hacker-Term"
+end
