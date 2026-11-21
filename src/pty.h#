@@ -1,0 +1,88 @@
+using "2026"
+;; pty.h# — sesje PTY (zamiennik pty_manager.rs z portable-pty). Natywna warstwa: native/pty_shim.c → libhtpty.a.
+;; Dane przechodzą jako base64 (napisy H# kończą się NUL-em, a terminal przenosi dowolne bajty).
+
+extern static [c, "htpty"] is
+    fn ht_pty_open(cols: int, rows: int, shell: string, cwd: string, env: string) -> int
+    fn ht_pty_read(h: int) -> string
+    fn ht_pty_write(h: int, b64: string) -> int
+    fn ht_pty_resize(h: int, cols: int, rows: int) -> int
+    fn ht_pty_alive(h: int) -> int
+    fn ht_pty_cwd(h: int) -> string
+    fn ht_pty_close(h: int) -> int
+end
+
+;; Rejestr: numeryczne id sesji frontendu (1, 2, 3 …) ↔ uchwyt PTY, w atomowych licznikach std sync
+;; (handlery komend nie mają App, więc stan procesu trzymamy globalnie). "pty:max" = największe użyte id.
+use "std -> sync" from "sync"
+
+fn key(id: int) -> string is
+    return "pty:" + to_string(id)
+end
+
+pub fn handle_of(id: int) -> int is
+    if id < 1 || id > sync::atomic_load("pty:max") is return 0 end
+    return sync::atomic_load(key(id))
+end
+
+pub fn max_id() -> int is
+    return sync::atomic_load("pty:max")
+end
+
+pub fn init() is
+    sync::atomic_new("pty:max", 0)
+end
+
+pub fn open(id: int, cols: int, rows: int, shell: string, cwd: string, env: string) -> bool is
+    if id < 1 is return false end
+    if handle_of(id) > 0 is return true end
+    let h: int = ht_pty_open(cols, rows, shell, cwd, env)
+    if h < 1 is return false end
+    sync::atomic_new(key(id), h)
+    sync::atomic_store(key(id), h)
+    if id > sync::atomic_load("pty:max") is sync::atomic_store("pty:max", id) end
+    return true
+end
+
+pub fn write(id: int, b64: string) -> bool is
+    let h: int = handle_of(id)
+    if h < 1 is return false end
+    return ht_pty_write(h, b64) >= 0
+end
+
+pub fn resize(id: int, cols: int, rows: int) -> bool is
+    let h: int = handle_of(id)
+    if h < 1 is return false end
+    return ht_pty_resize(h, cols, rows) >= 0
+end
+
+;; Nieblokujący odczyt (base64, "" = brak danych).
+pub fn read(id: int) -> string is
+    let h: int = handle_of(id)
+    if h < 1 is return "" end
+    return ht_pty_read(h)
+end
+
+pub fn is_open(id: int) -> bool is
+    return handle_of(id) > 0
+end
+
+;; true dopóki proces potomny działa
+pub fn alive(id: int) -> bool is
+    let h: int = handle_of(id)
+    if h < 1 is return false end
+    return ht_pty_alive(h) == 1
+end
+
+pub fn cwd(id: int) -> string is
+    let h: int = handle_of(id)
+    if h < 1 is return "" end
+    return ht_pty_cwd(h)
+end
+
+pub fn close(id: int) is
+    let h: int = handle_of(id)
+    if h < 1 is return end
+    ht_pty_close(h)
+    sync::atomic_store(key(id), 0)
+end
